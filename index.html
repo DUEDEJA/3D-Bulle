@@ -111,6 +111,52 @@ body { background:#000; overflow:hidden; font-family:'Fredoka One',cursive; }
   opacity:0; transition:opacity 0.3s;
 }
 #reload-msg.show { opacity:1; }
+
+/* ── Mobile controls ── */
+#joystick-zone {
+  position:fixed; bottom:30px; left:30px;
+  width:120px; height:120px;
+  z-index:25; display:none;
+  touch-action:none;
+}
+#joystick-base {
+  width:120px; height:120px; border-radius:50%;
+  background:rgba(255,255,255,0.12);
+  border:2px solid rgba(255,255,255,0.25);
+  position:absolute;
+}
+#joystick-thumb {
+  width:48px; height:48px; border-radius:50%;
+  background:rgba(245,200,66,0.7);
+  border:2px solid #F5C842;
+  position:absolute;
+  top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+#shoot-btn {
+  position:fixed; bottom:40px; right:36px;
+  width:90px; height:90px; border-radius:50%;
+  background:rgba(232,68,90,0.75);
+  border:3px solid #E8445A;
+  color:#fff; font-family:'Fredoka One',cursive;
+  font-size:1rem; z-index:25;
+  display:none; align-items:center; justify-content:center;
+  text-align:center; line-height:1.1;
+  touch-action:none; user-select:none;
+  box-shadow:0 4px 16px rgba(232,68,90,0.5);
+}
+#shoot-btn:active { background:rgba(232,68,90,1); transform:scale(0.93); }
+#reload-btn {
+  position:fixed; bottom:145px; right:44px;
+  width:64px; height:64px; border-radius:50%;
+  background:rgba(245,200,66,0.7);
+  border:2px solid #F5C842;
+  color:#3D1A00; font-family:'Fredoka One',cursive;
+  font-size:0.8rem; z-index:25;
+  display:none; align-items:center; justify-content:center;
+  touch-action:none; user-select:none;
+}
 </style>
 </head>
 <body>
@@ -138,16 +184,24 @@ body { background:#000; overflow:hidden; font-family:'Fredoka One',cursive; }
 <div id="wave-announce"></div>
 <div id="reload-msg">🔄 Laddar om...</div>
 
+<!-- Mobile controls -->
+<div id="joystick-zone">
+  <div id="joystick-base"></div>
+  <div id="joystick-thumb"></div>
+</div>
+<div id="shoot-btn">🔫<br>SKJUT</div>
+<div id="reload-btn">🔄<br>LADDA</div>
+
 <!-- Start -->
 <div class="screen" id="screen-start">
   <div class="emoji">🍞</div>
   <h1>Bulle Shooter</h1>
   <p>Skjut bullarna innan de når dig.<br>Akta dig för <strong>broccolin</strong> – den skadar dig!</p>
   <div class="controls-grid">
-    <span>Sikta</span><span>Musen</span>
-    <span>Skjut</span><span>Vänsterklick</span>
-    <span>Ladda om</span><span>R</span>
-    <span>Rörelse</span><span>WASD</span>
+    <span>Sikta</span><span>Mus / Svep höger</span>
+    <span>Skjut</span><span>Klick / 🔫-knapp</span>
+    <span>Ladda om</span><span>R / 🔄-knapp</span>
+    <span>Rörelse</span><span>WASD / Joystick</span>
   </div>
   <button class="btn" id="start-btn">Spela!</button>
 </div>
@@ -597,6 +651,7 @@ function gameLoop() {
     }
   }
 
+  applyJoystick();
   updateMovement(dt);
 
   // Camera rotation
@@ -612,6 +667,108 @@ function announceWave() {
   el.textContent = `🌊 Våg ${wave}!`;
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+// ── Mobile detection & touch controls ─────────────────
+const isMobile = /Android|iPhone|iPad|iPod|Touch/i.test(navigator.userAgent) || ('ontouchstart' in window);
+
+function showMobileControls() {
+  document.getElementById('joystick-zone').style.display = 'block';
+  document.getElementById('shoot-btn').style.display     = 'flex';
+  document.getElementById('reload-btn').style.display    = 'flex';
+  // Move healthbar up so it doesn't overlap joystick
+  document.getElementById('healthbar-wrap').style.bottom = '170px';
+}
+
+// Joystick state
+let joyActive = false, joyId = null;
+let joyOriginX = 0, joyOriginY = 0;
+let joyDX = 0, joyDY = 0;
+const JOY_RADIUS = 36;
+
+const joyZone  = document.getElementById('joystick-zone');
+const joyThumb = document.getElementById('joystick-thumb');
+
+joyZone.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const rect = joyZone.getBoundingClientRect();
+  joyActive = true;
+  joyId = t.identifier;
+  joyOriginX = t.clientX - rect.left;
+  joyOriginY = t.clientY - rect.top;
+}, { passive:false });
+
+joyZone.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for(const t of e.changedTouches) {
+    if(t.identifier !== joyId) continue;
+    const rect = joyZone.getBoundingClientRect();
+    let dx = (t.clientX - rect.left) - joyOriginX;
+    let dy = (t.clientY - rect.top)  - joyOriginY;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    if(dist > JOY_RADIUS) { dx = dx/dist*JOY_RADIUS; dy = dy/dist*JOY_RADIUS; }
+    joyDX = dx/JOY_RADIUS;
+    joyDY = dy/JOY_RADIUS;
+    joyThumb.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  }
+}, { passive:false });
+
+function resetJoy() {
+  joyActive=false; joyId=null; joyDX=0; joyDY=0;
+  joyThumb.style.transform = 'translate(-50%,-50%)';
+}
+joyZone.addEventListener('touchend',   resetJoy);
+joyZone.addEventListener('touchcancel',resetJoy);
+
+// Look / aim with right-side swipe
+let lookTouchId = null, lookLastX = 0, lookLastY = 0;
+document.getElementById('c').addEventListener('touchstart', e => {
+  for(const t of e.changedTouches) {
+    if(t.clientX > window.innerWidth * 0.35 && lookTouchId === null) {
+      lookTouchId = t.identifier;
+      lookLastX = t.clientX;
+      lookLastY = t.clientY;
+    }
+  }
+}, { passive:true });
+document.getElementById('c').addEventListener('touchmove', e => {
+  e.preventDefault();
+  for(const t of e.changedTouches) {
+    if(t.identifier !== lookTouchId) continue;
+    const dx = t.clientX - lookLastX;
+    const dy = t.clientY - lookLastY;
+    yaw   -= dx * 0.004;
+    pitch -= dy * 0.004;
+    pitch = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, pitch));
+    lookLastX = t.clientX;
+    lookLastY = t.clientY;
+  }
+}, { passive:false });
+document.getElementById('c').addEventListener('touchend', e => {
+  for(const t of e.changedTouches) {
+    if(t.identifier === lookTouchId) lookTouchId = null;
+  }
+});
+
+// Shoot & reload buttons
+document.getElementById('shoot-btn').addEventListener('touchstart', e => {
+  e.preventDefault(); shoot();
+}, { passive:false });
+document.getElementById('reload-btn').addEventListener('touchstart', e => {
+  e.preventDefault(); startReload();
+}, { passive:false });
+
+// Apply joystick movement each frame
+function applyJoystick() {
+  if(!joyActive) return;
+  const fwd   = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = new THREE.Vector3( Math.cos(yaw), 0, -Math.sin(yaw));
+  const speed = 0.08;
+  const nx = camera.position.x + (fwd.x*(-joyDY) + right.x*joyDX)*speed;
+  const nz = camera.position.z + (fwd.z*(-joyDY) + right.z*joyDX)*speed;
+  if(Math.abs(nx)<38) camera.position.x = nx;
+  if(Math.abs(nz)<38) camera.position.z = nz;
 }
 
 // ── Input ──────────────────────────────────────────────
@@ -671,7 +828,11 @@ function startGame() {
   gameRunning=true;
   clock.start();
   gameLoop();
-  document.getElementById('c').requestPointerLock();
+  if(isMobile) {
+    showMobileControls();
+  } else {
+    document.getElementById('c').requestPointerLock();
+  }
 }
 
 function endGame() {
